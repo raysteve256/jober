@@ -201,7 +201,8 @@ export default function App() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Request failed (${res.status})`);
+        const detail = body.detail ? ` — ${body.detail}` : "";
+        throw new Error((body.error || `Request failed (${res.status})`) + detail);
       }
 
       const result = await res.json();
