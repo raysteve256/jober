@@ -86,10 +86,10 @@ export default async (req, context) => {
       );
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: "Server misconfigured: ANTHROPIC_API_KEY not set" }),
+        JSON.stringify({ error: "Server misconfigured: GEMINI_API_KEY not set" }),
         { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -100,20 +100,31 @@ ${JSON.stringify(jobDNA ?? {}, null, 2)}
 New message from the job seeker:
 """${message}"""`;
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userContent }],
-      }),
-    });
+    // gemini-flash-latest is Google's own rolling alias for the current
+    // Flash release -- deliberately not pinning a version number here,
+    // since those get retired/renamed over time and this avoids having
+    // to chase that.
+    const GEMINI_MODEL = "gemini-flash-latest";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ role: "user", parts: [{ text: userContent }] }],
+          generationConfig: {
+            // Ask Gemini to guarantee valid JSON rather than relying on
+            // the prompt alone -- more reliable than Claude's approach
+            // of instructing "respond with only JSON" and hoping.
+            responseMimeType: "application/json",
+          },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errText = await response.text();
@@ -124,11 +135,10 @@ New message from the job seeker:
     }
 
     const data = await response.json();
-    const textBlock = data.content?.find((b) => b.type === "text");
-    const raw = textBlock?.text ?? "{}";
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
 
-    // Model is instructed to return raw JSON; strip fences defensively
-    // in case it wraps the response anyway.
+    // responseMimeType should guarantee clean JSON, but strip fences
+    // defensively in case the model wraps it anyway.
     const cleaned = raw.replace(/```json|```/g, "").trim();
 
     let parsed;

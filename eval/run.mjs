@@ -12,7 +12,7 @@
 // real users, per the spec's "eval-driven tuning" recommendation.
 //
 // Usage:
-//   ANTHROPIC_API_KEY=sk-ant-... node eval/run.mjs
+//   GEMINI_API_KEY=sk-ant-... node eval/run.mjs
 
 import { readFile } from "node:fs/promises";
 

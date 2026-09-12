@@ -20,7 +20,7 @@ per the recommended build order.
   in `.env.example`.
 - Dexie (IndexedDB) — local offline cache, syncs to Supabase in the
   background; the app still works with no signal
-- Netlify Function — proxies the Anthropic API so the key never
+- Netlify Function — proxies the Gemini API so the key never
   reaches the browser (same pattern as SEMAI)
 
 ## Database schema (already applied to the live project)
@@ -49,7 +49,7 @@ required yet. Upgrading to a real account later
 ```bash
 npm install
 cp .env.example .env
-# edit .env and set your real ANTHROPIC_API_KEY
+# edit .env and set your real GEMINI_API_KEY
 # (the Supabase URL and anon key are already filled in -- that
 # project is live and migrated)
 
@@ -81,7 +81,7 @@ Push this to a GitHub repo and connect it in Netlify, or run:
 netlify deploy --prod
 ```
 
-Set `ANTHROPIC_API_KEY` in Site settings -> Environment variables on
+Set `GEMINI_API_KEY` in Site settings -> Environment variables on
 Netlify -- the same pattern you already use for SEMAI.
 
 ## Try it
@@ -109,7 +109,7 @@ a case that contradicts a previously resolved fact.
 Run it against the live Reasoning Core:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-your-key
+export GEMINI_API_KEY=sk-ant-your-key
 node eval/run.mjs
 ```
 
