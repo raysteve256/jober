@@ -1,1 +1,70 @@
 @import "tailwindcss";
+
+:root {
+  --paper: #efe9d8;
+  --paper-deep: #e5decb;
+  --ink: #1f2430;
+  --ink-soft: #565044;
+  --seal-verified: #3b5d42;
+  --seal-verified-bg: #dde5da;
+  --stamp-ghost: #a3462f;
+  --stamp-ghost-bg: #ecd8d0;
+  --brass: #b08d57;
+  --brass-line: #c9b183;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-display {
+  font-family: "Fraunces", ui-serif, Georgia, serif;
+}
+
+.font-data {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A faint grain so the paper doesn't read as flat digital cream --
+   grounded in the field-journal concept, not decoration for its own sake. */
+.paper-grain {
+  background-color: var(--paper);
+  background-image: radial-gradient(var(--ink) 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+  background-position: 0 0;
+  position: relative;
+}
+.paper-grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  pointer-events: none;
+  background: inherit;
+}
+
+.paper-grain {
+  background-image:
+    radial-gradient(rgba(31, 36, 48, 0.05) 0.6px, transparent 0.6px);
+  background-size: 4px 4px;
+}
+
+/* The single orchestrated motion moment for this UI: a compass needle
+   settling while the Reasoning Core is thinking. Everything else is
+   still, per the "spend motion in one place" principle. */
+@keyframes needle-scan {
+  0% { transform: rotate(-18deg); }
+  50% { transform: rotate(14deg); }
+  100% { transform: rotate(-18deg); }
+}
+.needle-scan {
+  animation: needle-scan 1.6s ease-in-out infinite;
+  transform-origin: 50% 85%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .needle-scan { animation: none; }
+}
