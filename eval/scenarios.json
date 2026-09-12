@@ -1,0 +1,123 @@
+[
+  {
+    "id": "transcript-pending",
+    "message": "I'm done with my computer science course in Uganda Makerere University, and I'm still waiting for my transcripts, what jobs are available for me that I can qualify for to do in this period",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["credential", "transcript", "bridge", "interim", "location"],
+    "why": "Credential status (transcript pending) and whether he wants bridge work vs a career-track search are both load-bearing and unstated precisely enough to act on."
+  },
+  {
+    "id": "internship-missing-location",
+    "message": "I'm looking for internship and I'm in my second year doing computer science, I have cgpa of 3.6, find me internship",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["location", "region", "remote", "skills"],
+    "why": "Location is missing and load-bearing; CGPA scale is imprecise (4.0 vs 5.0 systems)."
+  },
+  {
+    "id": "salary-currency-ambiguous",
+    "message": "I need an IT job paying a minimum of shs 2000000, I just finished my bachelor's degree in computer science",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["uganda", "kenya", "tanzania", "monthly", "annual", "currency"],
+    "why": "\"shs\" is shared by UGX/KES/TZS and no pay period is given -- both load-bearing."
+  },
+  {
+    "id": "it-category-branching",
+    "message": "Uganda, monthly. Any IT job is fine.",
+    "jobDNA": { "location": "Uganda", "salary_min": 2000000, "salary_period": "monthly" },
+    "expected_action": "segment",
+    "expected_segments_include": ["development", "support", "networking"],
+    "why": "Currency/period now resolved via Job DNA; 'any IT job' is branching, not missing -- should segment, not ask a third question."
+  },
+  {
+    "id": "already-resolved-should-not-reask",
+    "message": "Any junior roles for me?",
+    "jobDNA": {
+      "location": "Kampala, Uganda",
+      "salary_min": 2000000,
+      "salary_period": "monthly",
+      "education": "BSc Computer Science",
+      "credential_status": "completed-verified"
+    },
+    "expected_action": "search",
+    "why": "Everything load-bearing is already in Job DNA -- must not re-ask location or salary again."
+  },
+  {
+    "id": "fully-specified-clear-query",
+    "message": "Remote junior backend developer roles, Python, up to 2 years experience, any salary.",
+    "jobDNA": {},
+    "expected_action": "search",
+    "why": "Location (remote), role, skill, and experience are all clear and not load-bearing-ambiguous -- no reason to ask."
+  },
+  {
+    "id": "vague-degree-language",
+    "message": "I graduated last month with a business degree, what jobs can I get?",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["location", "certificate", "transcript", "documents"],
+    "why": "\"Graduated\" doesn't confirm documents are in hand, and location/field-within-business is unresolved."
+  },
+  {
+    "id": "gpa-scale-ambiguous",
+    "message": "I have a GPA of 3.6, looking for graduate trainee programs in Nigeria.",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["scale", "4.0", "5.0", "out of"],
+    "why": "3.6 GPA is strong on a 4.0 scale but only moderate on a 5.0 scale (common in Nigeria) -- changes which programs correctly filter."
+  },
+  {
+    "id": "salary-period-only-missing",
+    "message": "Looking for a job in Kampala paying at least 3,000,000 UGX.",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["monthly", "annual", "per month", "per year"],
+    "why": "Currency is now unambiguous (UGX stated explicitly) but the pay period still is not -- one gap remains, still worth asking."
+  },
+  {
+    "id": "remote-explicit-no-location-needed",
+    "message": "I want a fully remote data analyst job, open to any country, comfortable with SQL and Excel.",
+    "jobDNA": {},
+    "expected_action": "search",
+    "why": "Remote + 'any country' explicitly resolves the location field -- asking here would be needless friction."
+  },
+  {
+    "id": "visa-status-relevant",
+    "message": "I'm a Nigerian citizen looking for software jobs in Germany or Canada, do I need sponsorship?",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["visa", "sponsorship", "authorization", "already have"],
+    "why": "Whether he already holds any work authorization vs needs sponsorship changes the entire result set -- must confirm, not assume the worse or better case."
+  },
+  {
+    "id": "branching-seniority-not-missing",
+    "message": "Marketing jobs in Kenya, I have 3 years of experience.",
+    "jobDNA": {},
+    "expected_action": "search",
+    "why": "\"Marketing\" is broad but not necessarily branching in a way that needs segmenting or asking -- experience level and location are both clear enough to search directly; segmentation by marketing sub-track (digital, content, brand) is a nice-to-have, not a blocking ambiguity."
+  },
+  {
+    "id": "contradicts-known-jobdna",
+    "message": "Actually, I'm open to relocating to Kenya now, not just Uganda.",
+    "jobDNA": { "location": "Uganda", "salary_min": 2000000, "salary_period": "monthly" },
+    "expected_action": "ask_or_search",
+    "expected_question_covers": ["kenya", "currency", "KES"],
+    "why": "This contradicts a previously resolved field (location/currency) -- must update Job DNA and likely re-confirm currency (KES vs UGX) since it changes salary interpretation, unlike the 'already-resolved' case above."
+  },
+  {
+    "id": "no-experience-explicit",
+    "message": "I have zero work experience, just finished high school, looking for any entry job in Kampala.",
+    "jobDNA": {},
+    "expected_action": "search",
+    "why": "Location, experience level, and openness ('any entry job') are all explicitly clear -- should search, possibly segmented by category, not ask."
+  },
+  {
+    "id": "part-time-vs-fulltime-unstated",
+    "message": "I'm a university student looking for work I can do alongside classes.",
+    "jobDNA": {},
+    "expected_action": "ask",
+    "expected_question_covers": ["location", "part-time", "hours", "field"],
+    "why": "Job type (part-time/flexible) is implied but location and field are both missing and load-bearing."
+  }
+]
