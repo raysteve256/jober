@@ -28,3 +28,8 @@ export async function ensureSession() {
   if (error) throw error;
   return data.session;
 }
+
+export async function getCurrentUserId() {
+  const session = await ensureSession();
+  return session.user.id;
+}

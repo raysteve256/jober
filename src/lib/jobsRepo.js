@@ -12,6 +12,7 @@
 // identical from the UI's point of view while the data source is real.
 
 import { supabase } from "./supabaseClient";
+import { computeFit } from "./scoring";
 
 export async function searchJobs(resolvedQuery = {}) {
   const { location, salary_min, category } = resolvedQuery;
@@ -42,8 +43,17 @@ export async function searchJobs(resolvedQuery = {}) {
     );
   }
 
-  return (jobs || []).map((j) => {
+  const scored = (jobs || []).map((j) => {
     const r = responsivenessByEmployer[j.company];
+    const jobForScoring = {
+      title: j.title,
+      location: j.location,
+      salaryUGXPerMonth: j.salary_amount,
+      requiresCertifiedTranscript: j.requires_certified_transcript,
+      category: j.category,
+    };
+    const { score, positives, negatives } = computeFit(jobForScoring, resolvedQuery);
+
     return {
       id: j.id,
       title: j.title,
@@ -53,9 +63,9 @@ export async function searchJobs(resolvedQuery = {}) {
       salaryUGXPerMonth: j.salary_amount,
       requiresCertifiedTranscript: j.requires_certified_transcript,
       meetsSalaryFloor: salary_min ? j.salary_amount >= salary_min : null,
-      // fit score is a Matching & Scoring concern, not built yet --
-      // placeholder until that module exists
-      fit: null,
+      fit: score,
+      fitPositives: positives,
+      fitNegatives: negatives,
       trust: {
         status: j.trust_status,
         lastVerifiedAt: j.last_verified_at,
@@ -70,6 +80,10 @@ export async function searchJobs(resolvedQuery = {}) {
         : { responseRatePct: null, avgResponseDays: null, totalLogged: 0 },
     };
   });
+
+  // Highest fit first -- the point of scoring is to surface what's
+  // actually worth the person's attention, not just list everything.
+  return scored.sort((a, b) => b.fit - a.fit);
 }
 
 // Lets a user log a real outcome, which feeds the crowdsourced

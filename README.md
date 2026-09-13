@@ -127,6 +127,27 @@ one exception is the `/reason` call itself, which is deliberately
 clear "you're offline" state. Icons in `public/pwa-*.png` are
 placeholders; swap them for real branding before shipping.
 
+## Matching & Scoring (now real, not a placeholder)
+
+`src/lib/scoring.js` computes an honest 0-100 fit score across four
+dimensions (location, salary vs. stated floor, credential/document
+requirements, category match) and returns separated positive and
+negative reasons -- never a bare number, per the spec's honesty
+principle. Verified it correctly penalizes a transcript-required role
+for a transcript-pending candidate while still surfacing it (not
+hiding it), which is the exact scenario this whole project started
+from.
+
+Tap "Why this fit?" on any result card to see the reasoning.
+
+## Learning Loop (outcome logging)
+
+Each result card now has a "Replied / Interview / Ghosted" logger.
+Every logged outcome writes to `application_outcomes` and immediately
+feeds the `employer_responsiveness` view for all users -- this is the
+only way the crowdsourced Responsiveness Score ever gets real data,
+so it's worth using once you're testing with real applications.
+
 ## What's deliberately NOT built yet (see the spec's build order)
 
 - Real Discovery Engine (BrighterMonday/Fuzu/company-page scraping)

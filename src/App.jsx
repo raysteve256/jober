@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getJobDNA, mergeJobDNA, logMessage, getHistory } from "./lib/jobDNA";
-import { searchJobs } from "./lib/jobsRepo";
+import { searchJobs, logApplicationOutcome } from "./lib/jobsRepo";
+import { getCurrentUserId } from "./lib/supabaseClient";
 
 // --- Small icon components, all grounded in the field-journal / -----
 // --- expedition metaphor: a compass for orientation, a wax-seal ------
@@ -127,7 +128,65 @@ function ResponsivenessDial({ responsiveness }) {
   );
 }
 
+function FitBadge({ fit }) {
+  if (fit == null) return null;
+  const color = fit >= 80 ? "var(--seal-verified)" : fit >= 55 ? "var(--brass)" : "var(--stamp-ghost)";
+  return (
+    <span
+      className="font-data whitespace-nowrap rounded-full border px-2 py-0.5 text-xs"
+      style={{ borderColor: color, color }}
+    >
+      {fit} fit
+    </span>
+  );
+}
+
+function OutcomeLogger({ job }) {
+  const [logged, setLogged] = useState(null); // 'replied' | 'ghosted' | 'interviewed' | null
+  const [busy, setBusy] = useState(false);
+
+  async function log(outcome) {
+    if (busy || logged) return;
+    setBusy(true);
+    try {
+      const userId = await getCurrentUserId();
+      await logApplicationOutcome({ userId, jobId: job.id, employerName: job.company, outcome });
+      setLogged(outcome);
+    } catch (err) {
+      console.warn("Could not log outcome:", err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (logged) {
+    return (
+      <p className="mt-2.5 text-xs italic" style={{ color: "var(--ink-soft)" }}>
+        Logged as {logged} — thanks, this helps future search results for everyone.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2.5 flex items-center gap-3 border-t pt-2" style={{ borderColor: "var(--brass-line)" }}>
+      <span className="text-[11px]" style={{ color: "var(--ink-soft)" }}>Applied? Log what happened:</span>
+      <button onClick={() => log("replied")} disabled={busy} className="text-xs underline" style={{ color: "var(--seal-verified)" }}>
+        Replied
+      </button>
+      <button onClick={() => log("interviewed")} disabled={busy} className="text-xs underline" style={{ color: "var(--seal-verified)" }}>
+        Interview
+      </button>
+      <button onClick={() => log("ghosted")} disabled={busy} className="text-xs underline" style={{ color: "var(--stamp-ghost)" }}>
+        Ghosted
+      </button>
+    </div>
+  );
+}
+
 function FieldCard({ job }) {
+  const [showWhy, setShowWhy] = useState(false);
+  const hasReasons = (job.fitPositives?.length || 0) + (job.fitNegatives?.length || 0) > 0;
+
   return (
     <div
       className="rounded-sm border p-3.5 shadow-sm"
@@ -142,7 +201,10 @@ function FieldCard({ job }) {
             {job.company} — {job.location}
           </p>
         </div>
-        <TrustMark trust={job.trust} />
+        <div className="flex flex-col items-end gap-1">
+          <TrustMark trust={job.trust} />
+          <FitBadge fit={job.fit} />
+        </div>
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -159,6 +221,34 @@ function FieldCard({ job }) {
         {job.meetsSalaryFloor === true && "  ·  meets your floor"}
         {job.meetsSalaryFloor === false && "  ·  below your stated floor"}
       </p>
+
+      {hasReasons && (
+        <div className="mt-2">
+          <button
+            onClick={() => setShowWhy((v) => !v)}
+            className="text-xs underline"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            {showWhy ? "Hide" : "Why this fit?"}
+          </button>
+          {showWhy && (
+            <div className="mt-1.5 space-y-1">
+              {job.fitPositives?.map((p, i) => (
+                <p key={"p" + i} className="text-xs" style={{ color: "var(--seal-verified)" }}>
+                  + {p}
+                </p>
+              ))}
+              {job.fitNegatives?.map((n, i) => (
+                <p key={"n" + i} className="text-xs" style={{ color: "var(--stamp-ghost)" }}>
+                  − {n}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <OutcomeLogger job={job} />
     </div>
   );
 }
