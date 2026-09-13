@@ -182,14 +182,17 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat, loading]);
 
-  async function send() {
-    const message = input.trim();
+  const [retryTarget, setRetryTarget] = useState(null); // { message, retriable }
+
+  async function sendMessage(message, { appendUserBubble = true } = {}) {
     if (!message || loading) return;
 
-    setInput("");
     setError(null);
-    setChat((c) => [...c, { role: "user", text: message }]);
-    logMessage("user", message);
+    setRetryTarget(null);
+    if (appendUserBubble) {
+      setChat((c) => [...c, { role: "user", text: message }]);
+      logMessage("user", message);
+    }
     setLoading(true);
 
     try {
@@ -202,7 +205,9 @@ export default function App() {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         const detail = body.detail ? ` — ${body.detail}` : "";
-        throw new Error((body.error || `Request failed (${res.status})`) + detail);
+        const err = new Error((body.error || `Request failed (${res.status})`) + detail);
+        err.retriable = !!body.retriable;
+        throw err;
       }
 
       const result = await res.json();
@@ -227,9 +232,21 @@ export default function App() {
       }
     } catch (err) {
       setError(err.message);
+      if (err.retriable) setRetryTarget({ message });
     } finally {
       setLoading(false);
     }
+  }
+
+  function send() {
+    const message = input.trim();
+    if (!message) return;
+    setInput("");
+    sendMessage(message, { appendUserBubble: true });
+  }
+
+  function retry() {
+    if (retryTarget) sendMessage(retryTarget.message, { appendUserBubble: false });
   }
 
   return (
@@ -344,12 +361,21 @@ export default function App() {
         )}
 
         {error && (
-          <p
-            className="border-l-2 pl-3 py-1 text-xs"
+          <div
+            className="border-l-2 pl-3 py-1.5 text-xs"
             style={{ borderColor: "var(--stamp-ghost)", color: "var(--stamp-ghost)" }}
           >
-            {error}
-          </p>
+            <p>{error}</p>
+            {retryTarget && (
+              <button
+                onClick={retry}
+                className="mt-1.5 rounded-full border px-2.5 py-1 text-xs font-medium"
+                style={{ borderColor: "var(--stamp-ghost)", color: "var(--stamp-ghost)" }}
+              >
+                Try again
+              </button>
+            )}
+          </div>
         )}
 
         <div ref={bottomRef} />

@@ -105,31 +105,58 @@ New message from the job seeker:
     // since those get retired/renamed over time and this avoids having
     // to chase that.
     const GEMINI_MODEL = "gemini-flash-latest";
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-      {
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+    const requestBody = JSON.stringify({
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text: userContent }] }],
+      generationConfig: {
+        // Ask Gemini to guarantee valid JSON rather than relying on
+        // the prompt alone -- more reliable than Claude's approach
+        // of instructing "respond with only JSON" and hoping.
+        responseMimeType: "application/json",
+      },
+    });
+
+    // 503 (model overloaded) and 429 (rate limited) are transient --
+    // worth a couple of quick retries with backoff before giving up,
+    // rather than surfacing a scary error for something that resolves
+    // itself in a second or two. Anything else (400/401/403) is not
+    // worth retrying -- it'll fail the same way every time.
+    const MAX_ATTEMPTS = 3;
+    let response;
+    let lastErrText;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      response = await fetch(GEMINI_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-goog-api-key": apiKey,
         },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [{ role: "user", parts: [{ text: userContent }] }],
-          generationConfig: {
-            // Ask Gemini to guarantee valid JSON rather than relying on
-            // the prompt alone -- more reliable than Claude's approach
-            // of instructing "respond with only JSON" and hoping.
-            responseMimeType: "application/json",
-          },
-        }),
-      }
-    );
+        body: requestBody,
+      });
+
+      if (response.ok) break;
+
+      const isTransient = response.status === 503 || response.status === 429;
+      lastErrText = await response.text();
+
+      if (!isTransient || attempt === MAX_ATTEMPTS) break;
+
+      // Backoff: ~600ms, then ~1200ms before the next attempt.
+      await new Promise((r) => setTimeout(r, 600 * attempt));
+    }
 
     if (!response.ok) {
-      const errText = await response.text();
+      const friendly =
+        response.status === 503
+          ? "The AI model is temporarily overloaded on Google's side. This usually clears within a minute -- please try again."
+          : response.status === 429
+          ? "Too many requests right now. Please wait a few seconds and try again."
+          : "Upstream API error";
+
       return new Response(
-        JSON.stringify({ error: "Upstream API error", detail: errText }),
+        JSON.stringify({ error: friendly, detail: lastErrText, retriable: response.status === 503 || response.status === 429 }),
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
     }
