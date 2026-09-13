@@ -39,7 +39,7 @@ function CompassRose({ className = "", spinning = false }) {
   );
 }
 
-function VerifiedSeal() {
+function VerifiedSeal({ label = "Verified" }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium -rotate-2"
@@ -52,12 +52,12 @@ function VerifiedSeal() {
       <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
         <path d="M1 5.2 L4 8 L9 1.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
       </svg>
-      Verified
+      {label}
     </span>
   );
 }
 
-function GhostStamp() {
+function GhostStamp({ label = "Ghost risk" }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-sm border-2 px-2 py-0.5 text-xs font-semibold rotate-2 tracking-wide"
@@ -67,26 +67,29 @@ function GhostStamp() {
         background: "var(--stamp-ghost-bg)",
       }}
     >
-      Ghost risk
+      {label}
     </span>
   );
 }
 
-function UnverifiedTag() {
+function UnverifiedTag({ label = "Unverified" }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
       style={{ borderColor: "var(--ink-soft)", color: "var(--ink-soft)" }}
     >
-      Unverified
+      {label}
     </span>
   );
 }
 
 function TrustMark({ trust }) {
-  if (trust.status === "verified" || trust.status === "probably_active") return <VerifiedSeal />;
-  if (trust.status === "ghost_risk" || trust.status === "closed") return <GhostStamp />;
-  return <UnverifiedTag />;
+  if (trust.status === "verified") return <VerifiedSeal label="Verified" />;
+  if (trust.status === "probably_active") return <VerifiedSeal label="Likely active" />;
+  if (trust.status === "ghost_risk") return <GhostStamp label="Ghost risk" />;
+  if (trust.status === "closed") return <GhostStamp label="Closed" />;
+  if (trust.status === "stale") return <UnverifiedTag label="Stale" />;
+  return <UnverifiedTag label="Unverified" />;
 }
 
 // A small dial gauge for responsiveness, instead of a generic badge --
@@ -206,6 +209,12 @@ function FieldCard({ job }) {
           <FitBadge fit={job.fit} />
         </div>
       </div>
+
+      {job.trust.reason && (
+        <p className="mt-1 text-[11px] italic" style={{ color: "var(--ink-soft)" }}>
+          {job.trust.reason}
+        </p>
+      )}
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <ResponsivenessDial responsiveness={job.responsiveness} />

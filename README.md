@@ -30,7 +30,12 @@ per the recommended build order.
 - `jobs` — shared listings with trust fields (`trust_status`,
   `days_unchanged`, etc.); publicly readable, writes reserved for the
   future Discovery Engine backend. Seeded with 4 sample rows matching
-  the scenarios walked through in the spec.
+  the scenarios walked through in the spec. Note: `trust_status` in
+  the DB is now only an explicit override for `closed` -- everything
+  else (verified/probably_active/stale/ghost_risk/unverified) is
+  computed live from `last_verified_at`/`posted_at`/`days_unchanged`
+  by `src/lib/trustScoring.js`, not typed in by hand. See the Trust
+  & Verification Layer section below.
 - `application_outcomes` — per-user logged outcomes (replied / ghosted
   / etc.), privately RLS-scoped
 - `employer_responsiveness` — a `SECURITY DEFINER` view aggregating
@@ -126,6 +131,35 @@ one exception is the `/reason` call itself, which is deliberately
 `NetworkOnly` — a stale cached AI response would be worse than a
 clear "you're offline" state. Icons in `public/pwa-*.png` are
 placeholders; swap them for real branding before shipping.
+
+## Trust & Verification Layer (ghost-job scoring, now computed)
+
+`src/lib/trustScoring.js` derives a job's trust status from real
+timestamps instead of a value someone typed in:
+
+- `verified` -- re-checked within the last 24h
+- `probably_active` ("Likely active") -- re-checked within the last week
+- `stale` -- either verified once but not recently, or never verified
+  and posted 30+ days ago
+- `ghost_risk` -- never verified and unchanged 45+ days
+- `closed` -- only ever comes from an explicit source signal, never
+  inferred from silence alone (silence and confirmed-closed are
+  different claims, and conflating them is exactly the overconfident
+  behavior the spec's honesty principle warns against)
+
+Verified this against the 4 seed rows plus a new case not in the seed
+data (a listing posted 35 days ago, never verified) and it correctly
+classified it as `stale` rather than falling through to a generic
+default. Every result card shows the actual reason
+("Unchanged for 61 days with no confirmation it's still open") as
+visible text, not a hover tooltip -- this needs to work on mobile,
+where there's no hover.
+
+**What this still can't do**: real ghost-job detection's strongest
+signal -- cross-referencing whether the same role exists on the
+company's own careers page -- requires the Discovery Engine, which
+isn't built. This is freshness-based scoring, a real but partial
+signal, not the full Trust Layer from the spec.
 
 ## Matching & Scoring (now real, not a placeholder)
 

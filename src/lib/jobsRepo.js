@@ -13,6 +13,7 @@
 
 import { supabase } from "./supabaseClient";
 import { computeFit } from "./scoring";
+import { computeTrustStatus } from "./trustScoring";
 
 export async function searchJobs(resolvedQuery = {}) {
   const { location, salary_min, category } = resolvedQuery;
@@ -53,6 +54,7 @@ export async function searchJobs(resolvedQuery = {}) {
       category: j.category,
     };
     const { score, positives, negatives } = computeFit(jobForScoring, resolvedQuery);
+    const trust = computeTrustStatus(j);
 
     return {
       id: j.id,
@@ -67,7 +69,8 @@ export async function searchJobs(resolvedQuery = {}) {
       fitPositives: positives,
       fitNegatives: negatives,
       trust: {
-        status: j.trust_status,
+        status: trust.status,
+        reason: trust.reason,
         lastVerifiedAt: j.last_verified_at,
         daysUnchanged: j.days_unchanged,
       },
