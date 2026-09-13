@@ -169,32 +169,84 @@ history of silently breaking in production with the legacy bundler --
 confirmed here that the `esbuild` bundler (already set in
 `netlify.toml`) handles it correctly.
 
-## Discovery Engine (first real source: user submissions)
+## Discovery Engine (real automated source, now built)
 
-Real scraping of BrighterMonday/Fuzu/company pages needs a raw-HTML
-fetch + parser running in a real server environment -- verified via
-live search/fetch that BrighterMonday has real, current listings
-(e.g. an "Android QA Engineer" role, CIM Innovations, UGX 1,000,000-
-1,500,000/mo), but there was no way to extract the actual DOM/CSS
-selectors a production scraper needs, or to verify a scraper against
-them, from the environment that built this. Shipping a guessed
-scraper would break the "verify before shipping" pattern the rest of
-this build has followed, so it's deliberately not here yet.
+`netlify/functions/discover-brightermonday.mjs` runs on a schedule
+(`@daily`) and pulls real listings from BrighterMonday's IT/Software/
+Data category page. It deliberately does NOT use fixed CSS selectors
+-- those break the moment a site's markup changes, which is exactly
+the maintenance-cost problem the spec flagged. Instead it fetches the
+raw page and asks Gemini to extract structured listings from it, the
+same "understand messy real content" capability the Reasoning Core
+already does for user queries, just pointed at HTML instead of a
+sentence.
 
-What IS built and real: **user-submitted listings** -- exactly the
-informal-channel coverage from the spec (a link from BrighterMonday, a
-WhatsApp group, a company page nobody scrapes). Tap "+ Add a listing
-you found" to submit one. It always lands as `trust_status:
-unverified` regardless of what the submitter claims -- enforced by
-the DB column default, and the client never sends trust_status on
-insert. A submission is not self-certifying; only the Trust Layer's
-own computation (or a real crawl later) can upgrade it to verified.
+**How this was verified before shipping** (continuing the pattern of
+not shipping unverified guesses): fetched the live page directly to
+confirm the real listing URL pattern
+(`brightermonday.co.ug/listings/<slug>`) and real field structure
+(title, company, location, salary-or-"Confidential", relative posted
+date like "1 week ago") actually exist as described -- this isn't a
+guess at site structure, it's built from real observed data. Then ran
+the full pipeline against that real data with the network calls mocked
+(page fetch, Gemini extraction, Supabase upsert all intercepted) and
+confirmed: correct salary midpoint parsing (`"USh 1,000,000 -
+1,500,000"` -> 1,250,000), correct relative-date-to-ISO conversion,
+correct category inference from real titles ("Android QA Engineer" ->
+qa, "Network Engineer" -> networking), and correct skip-on-missing-url
+behavior (a listing extracted without a real href is dropped, never
+given a fabricated URL). Also verified the actual Netlify function
+bundle with the real Netlify CLI: the `src/lib/parseHelpers.js`
+cross-directory import is physically inlined into the bundle (no
+dangling import), and `@supabase/supabase-js` is correctly included as
+a real `node_modules` dependency.
 
-**Next real step for this module**: either build a proper scraper
-against a real dev environment where the actual DOM can be inspected
-and the parser tested against it, or investigate whether any target
-site exposes a public JSON API (common on modern job boards) that
-would be far more robust than HTML scraping.
+**What's still unverified**: the actual live network round-trip (real
+fetch of the real page + real Gemini extraction + real Supabase write)
+has not run, since this sandbox can't reach any of those three
+services. This needs one real scheduled run on Netlify to confirm end
+to end -- check Netlify's function logs after the first `@daily` run,
+or invoke it manually with
+`netlify functions:invoke discover-brightermonday` once deployed.
+
+**Setup required**: add `SUPABASE_SERVICE_ROLE_KEY` to Netlify's
+environment variables (Project Settings -> API -> `service_role` in
+the Supabase dashboard -- NOT the anon key already there). This
+bypasses RLS deliberately, since the scraper is a trusted backend
+process rather than a user action -- see the comment in the function
+itself for why.
+
+**Deterministic parsing, not model arithmetic**:
+`src/lib/parseHelpers.js` handles relative-date and salary parsing
+directly rather than trusting Gemini's own math -- same principle as
+`trustScoring.js` and `atsCheck.js` not taking a claim at face value
+when it can be computed directly. Gemini's only job is extraction
+(find the listings and their real text/URLs); everything else is
+deterministic code.
+
+**Trust Layer connection**: upserting on `source_url` means a listing
+still present on a re-scrape gets its `last_verified_at` refreshed,
+keeping it `verified` in `trustScoring.js`. A listing that quietly
+disappears from the source page stops being refreshed and naturally
+ages toward `stale`/`ghost_risk` -- real ghost-job signal, not a
+separate detection system layered on top.
+
+**Next real step**: add more sources (Fuzu, company career pages) by
+writing a similar function per source, or generalizing this one to
+accept a list of source URLs -- the extraction/parsing pipeline
+already built here doesn't change per source, only the fetch target
+does.
+
+## User-submitted listings (a second Discovery Engine source)
+
+Alongside the automated scraper above: exactly the informal-channel
+coverage from the spec (a link from BrighterMonday, a WhatsApp group,
+a company page nobody scrapes). Tap "+ Add a listing you found" to
+submit one. It always lands as `trust_status: unverified` regardless
+of what the submitter claims -- enforced by the DB column default, and
+the client never sends trust_status on insert. A submission is not
+self-certifying; only the Trust Layer's own computation (or the
+scraper re-confirming it later) can upgrade it to verified.
 
 ## Trust & Verification Layer (ghost-job scoring, now computed)
 
