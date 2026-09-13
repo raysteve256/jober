@@ -89,6 +89,40 @@ export async function searchJobs(resolvedQuery = {}) {
   return scored.sort((a, b) => b.fit - a.fit);
 }
 
+// Lets a user submit a listing they found elsewhere (BrighterMonday,
+// a WhatsApp group, a company page) -- the Discovery Engine's first
+// real source, covering exactly the informal channels no scraper can
+// reach. Deliberately never sends trust_status -- it always starts
+// 'unverified' regardless of what the submitter believes, since a
+// user submission is not self-certifying (see the migration comment).
+export async function submitJob({
+  userId,
+  title,
+  company,
+  location,
+  category,
+  salaryAmount,
+  salaryPeriod,
+  requiresCertifiedTranscript,
+  sourceUrl,
+}) {
+  const { error } = await supabase.from("jobs").insert({
+    submitted_by: userId,
+    title,
+    company,
+    location: location || null,
+    category: category || null,
+    salary_amount: salaryAmount || null,
+    salary_currency: salaryAmount ? "UGX" : null,
+    salary_period: salaryPeriod || null,
+    requires_certified_transcript: !!requiresCertifiedTranscript,
+    source_url: sourceUrl || null,
+    posted_at: new Date().toISOString(),
+    // trust_status intentionally omitted -- DB default 'unverified' applies
+  });
+  if (error) throw error;
+}
+
 // Lets a user log a real outcome, which feeds the crowdsourced
 // Employer Responsiveness Score for everyone -- the Learning Loop
 // mechanism from the spec, now backed by a real table.

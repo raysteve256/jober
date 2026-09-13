@@ -132,6 +132,33 @@ one exception is the `/reason` call itself, which is deliberately
 clear "you're offline" state. Icons in `public/pwa-*.png` are
 placeholders; swap them for real branding before shipping.
 
+## Discovery Engine (first real source: user submissions)
+
+Real scraping of BrighterMonday/Fuzu/company pages needs a raw-HTML
+fetch + parser running in a real server environment -- verified via
+live search/fetch that BrighterMonday has real, current listings
+(e.g. an "Android QA Engineer" role, CIM Innovations, UGX 1,000,000-
+1,500,000/mo), but there was no way to extract the actual DOM/CSS
+selectors a production scraper needs, or to verify a scraper against
+them, from the environment that built this. Shipping a guessed
+scraper would break the "verify before shipping" pattern the rest of
+this build has followed, so it's deliberately not here yet.
+
+What IS built and real: **user-submitted listings** -- exactly the
+informal-channel coverage from the spec (a link from BrighterMonday, a
+WhatsApp group, a company page nobody scrapes). Tap "+ Add a listing
+you found" to submit one. It always lands as `trust_status:
+unverified` regardless of what the submitter claims -- enforced by
+the DB column default, and the client never sends trust_status on
+insert. A submission is not self-certifying; only the Trust Layer's
+own computation (or a real crawl later) can upgrade it to verified.
+
+**Next real step for this module**: either build a proper scraper
+against a real dev environment where the actual DOM can be inspected
+and the parser tested against it, or investigate whether any target
+site exposes a public JSON API (common on modern job boards) that
+would be far more robust than HTML scraping.
+
 ## Trust & Verification Layer (ghost-job scoring, now computed)
 
 `src/lib/trustScoring.js` derives a job's trust status from real

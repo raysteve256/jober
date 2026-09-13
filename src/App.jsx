@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getJobDNA, mergeJobDNA, logMessage, getHistory } from "./lib/jobDNA";
-import { searchJobs, logApplicationOutcome } from "./lib/jobsRepo";
+import { searchJobs, logApplicationOutcome, submitJob } from "./lib/jobsRepo";
 import { getCurrentUserId } from "./lib/supabaseClient";
 
 // --- Small icon components, all grounded in the field-journal / -----
@@ -262,6 +262,160 @@ function FieldCard({ job }) {
   );
 }
 
+function SubmitJobForm({ onSubmitted, onCancel }) {
+  const [fields, setFields] = useState({
+    title: "",
+    company: "",
+    location: "",
+    category: "development",
+    salaryAmount: "",
+    salaryPeriod: "monthly",
+    requiresCertifiedTranscript: false,
+    sourceUrl: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const inputStyle = {
+    borderColor: "var(--brass-line)",
+    background: "#fbf8ef",
+    color: "var(--ink)",
+  };
+  const labelStyle = { color: "var(--ink-soft)" };
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!fields.title.trim() || !fields.company.trim()) {
+      setErr("Title and company are required.");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const userId = await getCurrentUserId();
+      await submitJob({
+        userId,
+        title: fields.title.trim(),
+        company: fields.company.trim(),
+        location: fields.location.trim(),
+        category: fields.category,
+        salaryAmount: fields.salaryAmount ? Number(fields.salaryAmount) : null,
+        salaryPeriod: fields.salaryPeriod,
+        requiresCertifiedTranscript: fields.requiresCertifiedTranscript,
+        sourceUrl: fields.sourceUrl.trim(),
+      });
+      onSubmitted();
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="space-y-2 rounded-sm border p-3"
+      style={{ borderColor: "var(--brass-line)", background: "var(--paper-deep)" }}
+    >
+      <p className="font-display text-sm" style={{ color: "var(--ink)" }}>
+        Add a listing you found
+      </p>
+      <p className="text-[11px] italic" style={{ color: "var(--ink-soft)" }}>
+        Found something on BrighterMonday, WhatsApp, or a company page? Add it to the shared board --
+        it starts unverified until confirmed.
+      </p>
+
+      <input
+        className="w-full rounded-sm border px-2 py-1.5 text-sm"
+        style={inputStyle}
+        placeholder="Job title *"
+        value={fields.title}
+        onChange={(e) => setFields((f) => ({ ...f, title: e.target.value }))}
+      />
+      <input
+        className="w-full rounded-sm border px-2 py-1.5 text-sm"
+        style={inputStyle}
+        placeholder="Company *"
+        value={fields.company}
+        onChange={(e) => setFields((f) => ({ ...f, company: e.target.value }))}
+      />
+      <input
+        className="w-full rounded-sm border px-2 py-1.5 text-sm"
+        style={inputStyle}
+        placeholder="Location (e.g. Kampala, Uganda / Remote)"
+        value={fields.location}
+        onChange={(e) => setFields((f) => ({ ...f, location: e.target.value }))}
+      />
+
+      <div className="flex gap-2">
+        <select
+          className="flex-1 rounded-sm border px-2 py-1.5 text-sm"
+          style={inputStyle}
+          value={fields.category}
+          onChange={(e) => setFields((f) => ({ ...f, category: e.target.value }))}
+        >
+          <option value="development">Development</option>
+          <option value="support">Support</option>
+          <option value="networking">Networking</option>
+          <option value="qa">QA</option>
+          <option value="other">Other</option>
+        </select>
+        <input
+          className="w-28 rounded-sm border px-2 py-1.5 text-sm"
+          style={inputStyle}
+          placeholder="Salary UGX"
+          inputMode="numeric"
+          value={fields.salaryAmount}
+          onChange={(e) => setFields((f) => ({ ...f, salaryAmount: e.target.value }))}
+        />
+        <select
+          className="rounded-sm border px-2 py-1.5 text-sm"
+          style={inputStyle}
+          value={fields.salaryPeriod}
+          onChange={(e) => setFields((f) => ({ ...f, salaryPeriod: e.target.value }))}
+        >
+          <option value="monthly">/mo</option>
+          <option value="annual">/yr</option>
+        </select>
+      </div>
+
+      <input
+        className="w-full rounded-sm border px-2 py-1.5 text-sm"
+        style={inputStyle}
+        placeholder="Link to the original listing (optional)"
+        value={fields.sourceUrl}
+        onChange={(e) => setFields((f) => ({ ...f, sourceUrl: e.target.value }))}
+      />
+
+      <label className="flex items-center gap-1.5 text-xs" style={labelStyle}>
+        <input
+          type="checkbox"
+          checked={fields.requiresCertifiedTranscript}
+          onChange={(e) => setFields((f) => ({ ...f, requiresCertifiedTranscript: e.target.checked }))}
+        />
+        Requires a certified transcript to apply
+      </label>
+
+      {err && <p className="text-xs" style={{ color: "var(--stamp-ghost)" }}>{err}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-full border px-3 py-1 text-xs font-medium disabled:opacity-50"
+          style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
+        >
+          {busy ? "Adding..." : "Add to shared board"}
+        </button>
+        <button type="button" onClick={onCancel} className="text-xs underline" style={labelStyle}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function App() {
   const [chat, setChat] = useState([]);
   const [input, setInput] = useState("");
@@ -282,6 +436,7 @@ export default function App() {
   }, [chat, loading]);
 
   const [retryTarget, setRetryTarget] = useState(null); // { message, retriable }
+  const [showSubmitForm, setShowSubmitForm] = useState(false);
 
   async function sendMessage(message, { appendUserBubble = true } = {}) {
     if (!message || loading) return;
@@ -368,6 +523,32 @@ export default function App() {
       </header>
 
       <main className="flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowSubmitForm((v) => !v)}
+            className="text-[11px] underline"
+            style={{ color: "var(--brass)" }}
+          >
+            {showSubmitForm ? "Close" : "+ Add a listing you found"}
+          </button>
+        </div>
+
+        {showSubmitForm && (
+          <SubmitJobForm
+            onCancel={() => setShowSubmitForm(false)}
+            onSubmitted={() => {
+              setShowSubmitForm(false);
+              setChat((c) => [
+                ...c,
+                {
+                  role: "assistant",
+                  text: "Added to the shared board, marked unverified until confirmed -- thanks, this helps other job seekers too.",
+                },
+              ]);
+            }}
+          />
+        )}
+
         {chat.length === 0 && (
           <div
             className="mt-6 rounded-sm border border-dashed p-4 text-center"
