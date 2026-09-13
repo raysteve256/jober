@@ -132,6 +132,43 @@ one exception is the `/reason` call itself, which is deliberately
 clear "you're offline" state. Icons in `public/pwa-*.png` are
 placeholders; swap them for real branding before shipping.
 
+## Application Layer (AI drafts, human sends -- no auto-apply)
+
+Per the spec, this is deliberately NOT an auto-submit tool -- employers
+are now adding friction specifically to filter out AI-generated,
+high-volume applications, so auto-apply is a liability, not a feature.
+
+Tap "Draft an application note" on any result card:
+
+1. First time only, it asks for a short bio (saved to Job DNA, never
+   asked again) so drafts can reference something real about the
+   candidate.
+2. `netlify/functions/draft-application.mjs` (Gemini, same resilient
+   retry/backoff as the Reasoning Core -- factored into
+   `netlify/functions/_shared/gemini.mjs` and reused by both
+   functions) drafts a short, specific note -- explicitly instructed
+   to reference a concrete detail from the bio AND the job, and to
+   avoid generic-AI phrases ("I am excited to apply...", etc.).
+3. **Two independent checks**, not just the model's own opinion:
+   - The model self-reports `soundsHuman`/`atsSafe` with a reason.
+   - `src/lib/atsCheck.js` is a separate, deterministic check (bullet
+     characters, unfilled `[placeholders]`, table-like spacing,
+     non-standard unicode) -- verified it flags a deliberately bad
+     draft and passes a clean one, so a real problem doesn't depend on
+     the model accurately grading its own work.
+4. The draft is editable, and there's a **Copy** button -- nothing is
+   ever sent anywhere by the app itself.
+
+**Verified the shared-helper bundling actually works in production**,
+not just in theory: built the functions locally with the real Netlify
+CLI (`netlify functions:build`) and confirmed the retry/backoff code
+from `_shared/gemini.mjs` is physically inlined into both function
+bundles, with no separate `_shared` function artifact created. This
+matters because sharing code between Netlify Functions has a known
+history of silently breaking in production with the legacy bundler --
+confirmed here that the `esbuild` bundler (already set in
+`netlify.toml`) handles it correctly.
+
 ## Discovery Engine (first real source: user submissions)
 
 Real scraping of BrighterMonday/Fuzu/company pages needs a raw-HTML

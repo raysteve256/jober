@@ -6,9 +6,11 @@
 //   ask one short question, segment results, or proceed.
 //
 // It never talks to job boards. It only turns messy natural language
-// into a structured, resolved search request that the (not-yet-built)
-// Discovery Engine can consume later. This is deliberately the first
-// module built, because it's provable with no job data at all.
+// into a structured, resolved search request that the Discovery
+// Engine can consume. This was deliberately the first module built,
+// because it's provable with no job data at all.
+
+import { callGeminiJSON } from "./_shared/gemini.mjs";
 
 const SYSTEM_PROMPT = `You are the Reasoning Core of a job discovery system.
 Your only job on each turn is to read a job seeker's message plus their
@@ -86,99 +88,26 @@ export default async (req, context) => {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: "Server misconfigured: GEMINI_API_KEY not set" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
     const userContent = `Known Job DNA (already-resolved facts, do not re-ask these unless contradicted):
 ${JSON.stringify(jobDNA ?? {}, null, 2)}
 
 New message from the job seeker:
 """${message}"""`;
 
-    // gemini-flash-latest is Google's own rolling alias for the current
-    // Flash release -- deliberately not pinning a version number here,
-    // since those get retired/renamed over time and this avoids having
-    // to chase that.
-    const GEMINI_MODEL = "gemini-flash-latest";
-    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-    const requestBody = JSON.stringify({
-      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents: [{ role: "user", parts: [{ text: userContent }] }],
-      generationConfig: {
-        // Ask Gemini to guarantee valid JSON rather than relying on
-        // the prompt alone -- more reliable than Claude's approach
-        // of instructing "respond with only JSON" and hoping.
-        responseMimeType: "application/json",
-      },
+    const result = await callGeminiJSON({
+      apiKey: process.env.GEMINI_API_KEY,
+      systemPrompt: SYSTEM_PROMPT,
+      userContent,
     });
 
-    // 503 (model overloaded) and 429 (rate limited) are transient --
-    // worth a couple of quick retries with backoff before giving up,
-    // rather than surfacing a scary error for something that resolves
-    // itself in a second or two. Anything else (400/401/403) is not
-    // worth retrying -- it'll fail the same way every time.
-    const MAX_ATTEMPTS = 3;
-    let response;
-    let lastErrText;
-
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      response = await fetch(GEMINI_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: requestBody,
-      });
-
-      if (response.ok) break;
-
-      const isTransient = response.status === 503 || response.status === 429;
-      lastErrText = await response.text();
-
-      if (!isTransient || attempt === MAX_ATTEMPTS) break;
-
-      // Backoff: ~600ms, then ~1200ms before the next attempt.
-      await new Promise((r) => setTimeout(r, 600 * attempt));
-    }
-
-    if (!response.ok) {
-      const friendly =
-        response.status === 503
-          ? "The AI model is temporarily overloaded on Google's side. This usually clears within a minute -- please try again."
-          : response.status === 429
-          ? "Too many requests right now. Please wait a few seconds and try again."
-          : "Upstream API error";
-
+    if (!result.ok) {
       return new Response(
-        JSON.stringify({ error: friendly, detail: lastErrText, retriable: response.status === 503 || response.status === 429 }),
-        { status: 502, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: result.error, detail: result.detail, retriable: result.retriable }),
+        { status: result.status, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const data = await response.json();
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-
-    // responseMimeType should guarantee clean JSON, but strip fences
-    // defensively in case the model wraps it anyway.
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      return new Response(
-        JSON.stringify({ error: "Could not parse reasoning output", raw: cleaned }),
-        { status: 502, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    return new Response(JSON.stringify(parsed), {
+    return new Response(JSON.stringify(result.data), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

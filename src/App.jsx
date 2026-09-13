@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getJobDNA, mergeJobDNA, logMessage, getHistory } from "./lib/jobDNA";
 import { searchJobs, logApplicationOutcome, submitJob } from "./lib/jobsRepo";
 import { getCurrentUserId } from "./lib/supabaseClient";
+import { checkAtsSafety } from "./lib/atsCheck";
 
 // --- Small icon components, all grounded in the field-journal / -----
 // --- expedition metaphor: a compass for orientation, a wax-seal ------
@@ -186,7 +187,179 @@ function OutcomeLogger({ job }) {
   );
 }
 
-function FieldCard({ job }) {
+function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
+  const [stage, setStage] = useState("idle"); // idle | need-bio | drafting | drafted | error
+  const [bioInput, setBioInput] = useState("");
+  const [draft, setDraft] = useState("");
+  const [modelCheck, setModelCheck] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(null);
+
+  const atsResult = draft ? checkAtsSafety(draft) : null;
+
+  async function runDraft(bio) {
+    setStage("drafting");
+    setError(null);
+    try {
+      const res = await fetch("/.netlify/functions/draft-application", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          job: {
+            title: job.title,
+            company: job.company,
+            location: job.location,
+            requiresCertifiedTranscript: job.requiresCertifiedTranscript,
+          },
+          jobDNA,
+          bio,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+
+      setDraft(body.draft || "");
+      setModelCheck(body.selfCheck || null);
+      setStage("drafted");
+    } catch (err) {
+      setError(err.message);
+      setStage("error");
+    }
+  }
+
+  function start() {
+    if (jobDNA.bio) {
+      runDraft(jobDNA.bio);
+    } else {
+      setStage("need-bio");
+    }
+  }
+
+  async function saveBioAndDraft() {
+    const bio = bioInput.trim();
+    if (!bio) return;
+    await onBioSaved(bio);
+    runDraft(bio);
+  }
+
+  function copyDraft() {
+    navigator.clipboard?.writeText(draft);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  if (stage === "idle") {
+    return (
+      <button
+        onClick={start}
+        className="mt-2 text-xs underline"
+        style={{ color: "var(--brass)" }}
+      >
+        Draft an application note
+      </button>
+    );
+  }
+
+  if (stage === "need-bio") {
+    return (
+      <div className="mt-2 space-y-1.5 border-t pt-2" style={{ borderColor: "var(--brass-line)" }}>
+        <p className="text-xs" style={{ color: "var(--ink-soft)" }}>
+          First, a short bio so drafts can reference something real about you (saved for next time):
+        </p>
+        <textarea
+          className="w-full rounded-sm border px-2 py-1.5 text-xs"
+          style={{ borderColor: "var(--brass-line)", background: "#fbf8ef", color: "var(--ink)" }}
+          rows={2}
+          placeholder="e.g. Wrote Appium test suites for a fintech app for the past year, comfortable with Java and SQL"
+          value={bioInput}
+          onChange={(e) => setBioInput(e.target.value)}
+        />
+        <button
+          onClick={saveBioAndDraft}
+          className="rounded-full border px-2.5 py-1 text-xs font-medium"
+          style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
+        >
+          Save and draft
+        </button>
+      </div>
+    );
+  }
+
+  if (stage === "drafting") {
+    return (
+      <p className="mt-2 text-xs italic" style={{ color: "var(--ink-soft)" }}>
+        Drafting…
+      </p>
+    );
+  }
+
+  if (stage === "error") {
+    return (
+      <div className="mt-2 border-t pt-2" style={{ borderColor: "var(--brass-line)" }}>
+        <p className="text-xs" style={{ color: "var(--stamp-ghost)" }}>{error}</p>
+        <button onClick={start} className="mt-1 text-xs underline" style={{ color: "var(--ink-soft)" }}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  // drafted
+  return (
+    <div className="mt-2 space-y-2 border-t pt-2" style={{ borderColor: "var(--brass-line)" }}>
+      <textarea
+        className="w-full rounded-sm border px-2 py-1.5 text-xs"
+        style={{ borderColor: "var(--brass-line)", background: "#fbf8ef", color: "var(--ink)" }}
+        rows={5}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+      />
+
+      <div className="flex flex-wrap gap-1.5">
+        {modelCheck && !modelCheck.soundsHuman && (
+          <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: "var(--stamp-ghost-bg)", color: "var(--stamp-ghost)" }}>
+            Reads as generic -- edit before sending
+          </span>
+        )}
+        {atsResult && !atsResult.safe && (
+          <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: "var(--stamp-ghost-bg)", color: "var(--stamp-ghost)" }}>
+            ATS formatting risk
+          </span>
+        )}
+        {modelCheck?.soundsHuman && atsResult?.safe && (
+          <span className="rounded-full px-2 py-0.5 text-[11px]" style={{ background: "var(--seal-verified-bg)", color: "var(--seal-verified)" }}>
+            Reads naturally, ATS-safe
+          </span>
+        )}
+      </div>
+
+      {(modelCheck?.notes || atsResult?.warnings.length > 0) && (
+        <div className="space-y-0.5">
+          {modelCheck?.notes && (
+            <p className="text-[11px] italic" style={{ color: "var(--ink-soft)" }}>{modelCheck.notes}</p>
+          )}
+          {atsResult?.warnings.map((w, i) => (
+            <p key={i} className="text-[11px] italic" style={{ color: "var(--ink-soft)" }}>{w}</p>
+          ))}
+        </div>
+      )}
+
+      <p className="text-[11px] italic" style={{ color: "var(--ink-soft)" }}>
+        Read this before sending -- edit anything that doesn't sound like you. Nothing is sent automatically.
+      </p>
+
+      <button
+        onClick={copyDraft}
+        className="rounded-full border px-2.5 py-1 text-xs font-medium"
+        style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+function FieldCard({ job, jobDNA, onBioSaved }) {
   const [showWhy, setShowWhy] = useState(false);
   const hasReasons = (job.fitPositives?.length || 0) + (job.fitNegatives?.length || 0) > 0;
 
@@ -257,6 +430,7 @@ function FieldCard({ job }) {
         </div>
       )}
 
+      <ApplicationDrafter job={job} jobDNA={jobDNA} onBioSaved={onBioSaved} />
       <OutcomeLogger job={job} />
     </div>
   );
@@ -614,7 +788,7 @@ export default function App() {
                       </p>
                       <div className="space-y-2">
                         {segJobs.map((j) => (
-                          <FieldCard key={j.id} job={j} />
+                          <FieldCard key={j.id} job={j} jobDNA={jobDNA} onBioSaved={(bio) => mergeJobDNA({ bio }).then(setJobDNA)} />
                         ))}
                       </div>
                     </div>
@@ -623,7 +797,7 @@ export default function App() {
               ) : (
                 <div className="space-y-2">
                   {entry.jobs.map((j) => (
-                    <FieldCard key={j.id} job={j} />
+                    <FieldCard key={j.id} job={j} jobDNA={jobDNA} onBioSaved={(bio) => mergeJobDNA({ bio }).then(setJobDNA)} />
                   ))}
                 </div>
               )}
