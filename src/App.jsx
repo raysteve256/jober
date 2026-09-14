@@ -3,6 +3,7 @@ import { getJobDNA, mergeJobDNA, logMessage, getHistory } from "./lib/jobDNA";
 import { searchJobs, logApplicationOutcome, submitJob, getTrackedOutcomes } from "./lib/jobsRepo";
 import { getCurrentUserId } from "./lib/supabaseClient";
 import { checkAtsSafety } from "./lib/atsCheck";
+import { CATEGORIES } from "./lib/parseHelpers";
 
 // --- Small icon components, all grounded in the field-journal / -----
 // --- expedition metaphor: a compass for orientation, a wax-seal ------
@@ -436,12 +437,19 @@ function FieldCard({ job, jobDNA, onBioSaved }) {
   );
 }
 
+function categoryLabel(slug) {
+  return slug
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function SubmitJobForm({ onSubmitted, onCancel }) {
   const [fields, setFields] = useState({
     title: "",
     company: "",
     location: "",
-    category: "development",
+    category: "other",
     salaryAmount: "",
     salaryPeriod: "monthly",
     requiresCertifiedTranscript: false,
@@ -529,11 +537,9 @@ function SubmitJobForm({ onSubmitted, onCancel }) {
           value={fields.category}
           onChange={(e) => setFields((f) => ({ ...f, category: e.target.value }))}
         >
-          <option value="development">Development</option>
-          <option value="support">Support</option>
-          <option value="networking">Networking</option>
-          <option value="qa">QA</option>
-          <option value="other">Other</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{categoryLabel(c)}</option>
+          ))}
         </select>
         <input
           className="w-28 rounded-sm border px-2 py-1.5 text-sm"
@@ -590,8 +596,6 @@ function SubmitJobForm({ onSubmitted, onCancel }) {
   );
 }
 
-const CATEGORIES = ["development", "support", "networking", "qa", "other"];
-
 function BrowseView({ jobDNA, onBioSaved }) {
   const [category, setCategory] = useState("");
   const [location, setLocation] = useState("");
@@ -636,7 +640,7 @@ function BrowseView({ jobDNA, onBioSaved }) {
         >
           <option value="">All categories</option>
           {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>{categoryLabel(c)}</option>
           ))}
         </select>
         <input

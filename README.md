@@ -205,84 +205,113 @@ history of silently breaking in production with the legacy bundler --
 confirmed here that the `esbuild` bundler (already set in
 `netlify.toml`) handles it correctly.
 
-## Discovery Engine (real automated source, now built)
+## Discovery Engine (two automated sources, all sectors -- not IT-only)
 
-`netlify/functions/discover-brightermonday.mjs` runs on a schedule
-(`@daily`) and pulls real listings from BrighterMonday's IT/Software/
-Data category page. It deliberately does NOT use fixed CSS selectors
--- those break the moment a site's markup changes, which is exactly
-the maintenance-cost problem the spec flagged. Instead it fetches the
-raw page and asks Gemini to extract structured listings from it, the
-same "understand messy real content" capability the Reasoning Core
-already does for user queries, just pointed at HTML instead of a
-sentence.
+**This used to only cover IT jobs from one source. Fixed on both counts.**
+
+`netlify/functions/_shared/discovery.mjs` is the shared pipeline
+(fetch -> Gemini structured extraction -> deterministic parsing ->
+upsert), factored out so adding a source is a ~15-line config, not a
+new pipeline. Two sources currently run on it, both `@daily`:
+
+- `discover-brightermonday.mjs` -- now points at BrighterMonday's
+  **general** `/jobs` page (995+ listings across all sectors), not the
+  earlier IT-only `/jobs/software-data` category page.
+- `discover-fuzu.mjs` -- a second, independent source.
+
+Neither uses fixed CSS selectors -- those break the moment a site's
+markup changes. Instead each fetches the raw page and asks Gemini to
+extract structured listings, the same "understand messy real content"
+capability the Reasoning Core already does for user queries, just
+pointed at HTML instead of a sentence.
+
+**General category taxonomy, built from real data, not guessed**:
+`src/lib/parseHelpers.js` defines `CATEGORIES` -- 23 categories
+(it-software, engineering, sales, finance-accounting, healthcare,
+education-training, trades-services, ngo-social, etc.) taken directly
+from BrighterMonday's own live 26-category "Job Function" filter
+sidebar (fetched directly, with real per-category listing counts), not
+invented. `normalizeCategory()` maps each source's own raw category
+label into this shared taxonomy -- necessary because BrighterMonday
+and Fuzu use genuinely different label wording for the same sectors
+(confirmed by fetching both live: BrighterMonday says "IT, Software &
+Data", Fuzu says "Information technology, software development,
+data"). Verified against all 31 real category labels observed across
+both sites -- initially 29/31 passed, and testing caught two real
+ordering bugs (a generic "management" pattern matching before the more
+specific "project management" one, and "logistics" matching before a
+more specific "driver/transport" check) that were fixed and reverified
+to 31/31 before shipping.
 
 **How this was verified before shipping** (continuing the pattern of
-not shipping unverified guesses): fetched the live page directly to
-confirm the real listing URL pattern
-(`brightermonday.co.ug/listings/<slug>`) and real field structure
-(title, company, location, salary-or-"Confidential", relative posted
-date like "1 week ago") actually exist as described -- this isn't a
-guess at site structure, it's built from real observed data. Then ran
-the full pipeline against that real data with the network calls mocked
-(page fetch, Gemini extraction, Supabase upsert all intercepted) and
-confirmed: correct salary midpoint parsing (`"USh 1,000,000 -
-1,500,000"` -> 1,250,000), correct relative-date-to-ISO conversion,
-correct category inference from real titles ("Android QA Engineer" ->
-qa, "Network Engineer" -> networking), and correct skip-on-missing-url
-behavior (a listing extracted without a real href is dropped, never
-given a fabricated URL). Also verified the actual Netlify function
-bundle with the real Netlify CLI: the `src/lib/parseHelpers.js`
-cross-directory import is physically inlined into the bundle (no
-dangling import), and `@supabase/supabase-js` is correctly included as
-a real `node_modules` dependency.
+not shipping unverified guesses): fetched both live pages directly
+first to confirm real listing URL patterns
+(`brightermonday.co.ug/listings/<slug>`,
+`fuzu.com/uganda/jobs/<slug>-<id>`) and real field structure actually
+exist as described. Then ran the full pipeline for both sources
+end-to-end with network calls mocked using that real observed data
+(now spanning Business Development, Accounting, HVAC Technician,
+Manufacturing, Banking -- not just tech roles) and confirmed correct
+category normalization, correct salary parsing, and correct handling
+of Fuzu's listings that simply don't show a salary at all (returns
+`null`, never fabricates a number or assumes "Confidential", which is
+a different, more specific claim than "not shown"). Also verified the
+actual Netlify function bundles with the real Netlify CLI for both
+functions: the shared pipeline and category-matching logic are
+physically inlined into each bundle, with `@supabase/supabase-js`
+correctly included as a real `node_modules` dependency. One real bug
+caught this way and fixed: the shared module's relative import path
+was initially wrong by one directory level (`_shared/` sits one level
+deeper than the top-level function files) -- the mocked end-to-end
+test failed immediately with a clear `ERR_MODULE_NOT_FOUND` rather
+than silently working, which is exactly why this gets tested instead
+of assumed.
 
 **What's still unverified**: the actual live network round-trip (real
-fetch of the real page + real Gemini extraction + real Supabase write)
-has not run, since this sandbox can't reach any of those three
-services. This needs one real scheduled run on Netlify to confirm end
-to end -- check Netlify's function logs after the first `@daily` run,
-or invoke it manually with
-`netlify functions:invoke discover-brightermonday` once deployed.
+fetch + real Gemini extraction + real Supabase write) has not run for
+either source, since this sandbox can't reach any of those services.
+Needs one real scheduled run on Netlify to confirm end to end -- check
+Netlify's function logs, or invoke manually with
+`netlify functions:invoke discover-brightermonday` /
+`netlify functions:invoke discover-fuzu` once deployed.
 
 **Setup required**: add `SUPABASE_SERVICE_ROLE_KEY` to Netlify's
 environment variables (Project Settings -> API -> `service_role` in
-the Supabase dashboard -- NOT the anon key already there). This
-bypasses RLS deliberately, since the scraper is a trusted backend
-process rather than a user action -- see the comment in the function
-itself for why.
+the Supabase dashboard -- NOT the anon key already there). Deliberate
+RLS bypass, since both scrapers are trusted backend processes, not
+user actions.
 
 **Deterministic parsing, not model arithmetic**:
-`src/lib/parseHelpers.js` handles relative-date and salary parsing
-directly rather than trusting Gemini's own math -- same principle as
-`trustScoring.js` and `atsCheck.js` not taking a claim at face value
-when it can be computed directly. Gemini's only job is extraction
-(find the listings and their real text/URLs); everything else is
-deterministic code.
+`src/lib/parseHelpers.js` handles relative-date, salary, and category
+parsing directly rather than trusting Gemini's own judgment for things
+that can be computed or matched deterministically -- same principle as
+`trustScoring.js` and `atsCheck.js`. Gemini's only job is extraction
+(find the listings and their real text/URLs/raw category label);
+everything else is deterministic code.
 
 **Trust Layer connection**: upserting on `source_url` means a listing
 still present on a re-scrape gets its `last_verified_at` refreshed,
 keeping it `verified` in `trustScoring.js`. A listing that quietly
-disappears from the source page stops being refreshed and naturally
-ages toward `stale`/`ghost_risk` -- real ghost-job signal, not a
-separate detection system layered on top.
+disappears from a source stops being refreshed and naturally ages
+toward `stale`/`ghost_risk` -- real ghost-job signal, not a separate
+detection system layered on top.
 
-**Next real step**: add more sources (Fuzu, company career pages) by
-writing a similar function per source, or generalizing this one to
-accept a list of source URLs -- the extraction/parsing pipeline
-already built here doesn't change per source, only the fetch target
-does.
+**Next real step**: add a third source (a company careers page, or
+another regional board) -- same ~15-line config pattern, fetch the
+real page first to confirm structure before writing the config, same
+as both sources above.
 
-## User-submitted listings (a second Discovery Engine source)
+## User-submitted listings (a third Discovery Engine source)
 
-Alongside the automated scraper above: exactly the informal-channel
-coverage from the spec (a link from BrighterMonday, a WhatsApp group,
-a company page nobody scrapes). Tap "+ Add a listing you found" to
-submit one. It always lands as `trust_status: unverified` regardless
-of what the submitter claims -- enforced by the DB column default, and
-the client never sends trust_status on insert. A submission is not
-self-certifying; only the Trust Layer's own computation (or the
-scraper re-confirming it later) can upgrade it to verified.
+Alongside the two automated scrapers above: exactly the
+informal-channel coverage from the spec (a link from BrighterMonday, a
+WhatsApp group, a company page nobody scrapes). Tap "+ Add a listing
+you found" to submit one. It always lands as `trust_status: unverified`
+regardless of what the submitter claims -- enforced by the DB column
+default, and the client never sends trust_status on insert. A
+submission is not self-certifying; only the Trust Layer's own
+computation (or a scraper re-confirming it later) can upgrade it to
+verified.
 
 ## Trust & Verification Layer (ghost-job scoring, now computed)
 

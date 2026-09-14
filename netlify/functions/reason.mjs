@@ -37,7 +37,10 @@ For every message, do this:
      which does not confirm documents are in hand).
    - "branching": stated, but spans multiple valid sub-categories
      that should be shown separately rather than merged or guessed
-     into one (e.g. "IT job" spans development/support/networking/QA).
+     into one (e.g. "IT job" spans development/support/networking/QA;
+     "sales job" spans retail/B2B/telesales; "healthcare job" spans
+     nursing/clinical/administrative roles -- this applies across
+     every sector, not just tech).
 
 3. CHECK the provided Job DNA (already-known facts) before flagging
    anything missing or imprecise — never ask about something already
