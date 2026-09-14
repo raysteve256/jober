@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getJobDNA, mergeJobDNA, logMessage, getHistory } from "./lib/jobDNA";
-import { searchJobs, logApplicationOutcome, submitJob } from "./lib/jobsRepo";
+import { searchJobs, logApplicationOutcome, submitJob, getTrackedOutcomes } from "./lib/jobsRepo";
 import { getCurrentUserId } from "./lib/supabaseClient";
 import { checkAtsSafety } from "./lib/atsCheck";
 
@@ -590,6 +590,247 @@ function SubmitJobForm({ onSubmitted, onCancel }) {
   );
 }
 
+const CATEGORIES = ["development", "support", "networking", "qa", "other"];
+
+function BrowseView({ jobDNA, onBioSaved }) {
+  const [category, setCategory] = useState("");
+  const [location, setLocation] = useState("");
+  const [jobs, setJobs] = useState(null); // null = not loaded yet
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const results = await searchJobs({
+        ...jobDNA,
+        category: category || jobDNA.category,
+        location: location || jobDNA.location,
+      });
+      setJobs(results);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
+      <p className="font-display text-sm" style={{ color: "var(--ink)" }}>
+        Everything in the log
+      </p>
+
+      <div className="flex gap-2">
+        <select
+          className="flex-1 rounded-sm border px-2 py-1.5 text-sm"
+          style={{ borderColor: "var(--brass-line)", background: "#fbf8ef", color: "var(--ink)" }}
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+        >
+          <option value="">All categories</option>
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <input
+          className="flex-1 rounded-sm border px-2 py-1.5 text-sm"
+          style={{ borderColor: "var(--brass-line)", background: "#fbf8ef", color: "var(--ink)" }}
+          placeholder="Location"
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+        />
+        <button
+          onClick={load}
+          className="rounded-sm border px-3 py-1.5 text-sm"
+          style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
+        >
+          Filter
+        </button>
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-2 pl-1">
+          <CompassRose className="h-6 w-6" spinning />
+          <span className="font-display italic text-sm" style={{ color: "var(--ink-soft)" }}>
+            scanning the log…
+          </span>
+        </div>
+      )}
+
+      {error && (
+        <p className="border-l-2 pl-3 py-1 text-xs" style={{ borderColor: "var(--stamp-ghost)", color: "var(--stamp-ghost)" }}>
+          {error}
+        </p>
+      )}
+
+      {jobs && jobs.length === 0 && !loading && (
+        <p className="font-display italic text-sm py-2" style={{ color: "var(--ink-soft)" }}>
+          Nothing matches those filters yet.
+        </p>
+      )}
+
+      {jobs && jobs.length > 0 && (
+        <div className="space-y-2">
+          {jobs.map((j) => (
+            <FieldCard key={j.id} job={j} jobDNA={jobDNA} onBioSaved={onBioSaved} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function outcomeLabel(outcome) {
+  if (outcome === "replied") return "Replied";
+  if (outcome === "interviewed") return "Interview";
+  if (outcome === "offered") return "Offered";
+  if (outcome === "rejected") return "Rejected";
+  if (outcome === "ghosted") return "Ghosted";
+  return outcome;
+}
+
+function outcomeIsPositive(outcome) {
+  return outcome === "replied" || outcome === "interviewed" || outcome === "offered";
+}
+
+function TrackedView() {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const userId = await getCurrentUserId();
+        const tracked = await getTrackedOutcomes(userId);
+        setRows(tracked);
+      } catch (err) {
+        setError(err.message);
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <p className="font-display text-sm" style={{ color: "var(--ink)" }}>
+        What you've logged
+      </p>
+
+      {error && (
+        <p className="border-l-2 pl-3 py-1 text-xs" style={{ borderColor: "var(--stamp-ghost)", color: "var(--stamp-ghost)" }}>
+          {error}
+        </p>
+      )}
+
+      {rows === null && !error && (
+        <p className="font-display italic text-sm" style={{ color: "var(--ink-soft)" }}>Loading…</p>
+      )}
+
+      {rows && rows.length === 0 && (
+        <p className="font-display italic text-sm py-2" style={{ color: "var(--ink-soft)" }}>
+          Nothing logged yet -- use "Applied? Log what happened" on a result card once you hear
+          back (or don't) from somewhere. It helps everyone else too.
+        </p>
+      )}
+
+      {rows && rows.length > 0 && (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div
+              key={r.outcomeId}
+              className="rounded-sm border p-3"
+              style={{ borderColor: "var(--brass-line)", background: "var(--paper-deep)" }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-display text-[15px]" style={{ color: "var(--ink)" }}>{r.job.title}</p>
+                  <p className="text-xs" style={{ color: "var(--ink-soft)" }}>{r.job.company} — {r.job.location}</p>
+                </div>
+                <span
+                  className="whitespace-nowrap rounded-full border px-2 py-0.5 text-xs"
+                  style={
+                    outcomeIsPositive(r.outcome)
+                      ? { borderColor: "var(--seal-verified)", color: "var(--seal-verified)", background: "var(--seal-verified-bg)" }
+                      : { borderColor: "var(--stamp-ghost)", color: "var(--stamp-ghost)", background: "var(--stamp-ghost-bg)" }
+                  }
+                >
+                  {outcomeLabel(r.outcome)}
+                </span>
+              </div>
+              <p className="mt-1.5 text-[11px]" style={{ color: "var(--ink-soft)" }}>
+                Logged {new Date(r.loggedAt).toLocaleDateString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NavIcon({ type }) {
+  const common = { width: 20, height: 20, viewBox: "0 0 20 20", fill: "none", "aria-hidden": true };
+  if (type === "search") {
+    return (
+      <svg {...common}>
+        <circle cx="9" cy="9" r="6" stroke="currentColor" strokeWidth="1.4" />
+        <line x1="13.5" y1="13.5" x2="18" y2="18" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (type === "browse") {
+    return (
+      <svg {...common}>
+        <rect x="2.5" y="3" width="15" height="3.2" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="2.5" y="8.4" width="15" height="3.2" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
+        <rect x="2.5" y="13.8" width="15" height="3.2" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
+      </svg>
+    );
+  }
+  // tracked
+  return (
+    <svg {...common}>
+      <path d="M4 2.5h9l3 3v12h-12z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M6.5 9.5 L9 12 L14 6.5" stroke="currentColor" strokeWidth="1.3" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function BottomNav({ view, setView }) {
+  const tabs = [
+    { id: "search", label: "Search" },
+    { id: "browse", label: "Browse" },
+    { id: "tracked", label: "Tracked" },
+  ];
+  return (
+    <nav
+      className="flex border-t-2"
+      style={{ borderColor: "var(--ink)", background: "var(--paper-deep)" }}
+    >
+      {tabs.map((t) => {
+        const active = view === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => setView(t.id)}
+            className="flex flex-1 flex-col items-center gap-0.5 py-2"
+            style={{ color: active ? "var(--ink)" : "var(--ink-soft)" }}
+          >
+            <NavIcon type={t.id} />
+            <span className="text-[10px]" style={{ fontWeight: active ? 600 : 400 }}>{t.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 export default function App() {
   const [chat, setChat] = useState([]);
   const [input, setInput] = useState("");
@@ -611,6 +852,7 @@ export default function App() {
 
   const [retryTarget, setRetryTarget] = useState(null); // { message, retriable }
   const [showSubmitForm, setShowSubmitForm] = useState(false);
+  const [view, setView] = useState("search"); // search | browse | tracked
 
   async function sendMessage(message, { appendUserBubble = true } = {}) {
     if (!message || loading) return;
@@ -696,6 +938,7 @@ export default function App() {
         </div>
       </header>
 
+      {view === "search" && (
       <main className="flex-1 space-y-3.5 overflow-y-auto px-4 py-4">
         <div className="flex justify-end">
           <button
@@ -772,7 +1015,12 @@ export default function App() {
                   {entry.note}
                 </p>
               )}
-              {entry.segments ? (
+              {entry.jobs.length === 0 ? (
+                <p className="font-display italic text-sm py-2" style={{ color: "var(--ink-soft)" }}>
+                  Nothing in the log matches that yet. Try "+ Add a listing you found" if you've
+                  seen something relevant elsewhere, or widen what you're looking for.
+                </p>
+              ) : entry.segments ? (
                 entry.segments.map((seg) => {
                   const segJobs = entry.jobs.filter((j) => j.category === seg.toLowerCase());
                   if (segJobs.length === 0) return null;
@@ -834,7 +1082,15 @@ export default function App() {
 
         <div ref={bottomRef} />
       </main>
+      )}
 
+      {view === "browse" && (
+        <BrowseView jobDNA={jobDNA} onBioSaved={(bio) => mergeJobDNA({ bio }).then(setJobDNA)} />
+      )}
+
+      {view === "tracked" && <TrackedView />}
+
+      {view === "search" && (
       <footer
         className="border-t-2 p-3"
         style={{ borderColor: "var(--ink)", background: "var(--paper-deep)" }}
@@ -861,6 +1117,9 @@ export default function App() {
           </button>
         </div>
       </footer>
+      )}
+
+      <BottomNav view={view} setView={setView} />
     </div>
   );
 }

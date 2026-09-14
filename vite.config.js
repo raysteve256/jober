@@ -11,11 +11,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Job Discovery',
-        short_name: 'JobDiscovery',
+        name: 'Field Notes — Job Discovery',
+        short_name: 'Field Notes',
         description: 'AI job discovery — asks the right question, finds the right roles.',
-        theme_color: '#2563eb',
-        background_color: '#f9fafb',
+        theme_color: '#1F2430',
+        background_color: '#EFE9D8',
         display: 'standalone',
         start_url: '/',
         icons: [

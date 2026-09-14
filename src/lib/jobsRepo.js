@@ -123,6 +123,31 @@ export async function submitJob({
   if (error) throw error;
 }
 
+// Fetches everything the current user has logged an outcome for,
+// joined with the job's real details -- the data source for the
+// Tracked view. RLS already scopes application_outcomes to the
+// querying user, but filtering by userId explicitly here too keeps
+// the intent obvious rather than relying on RLS silently doing it.
+export async function getTrackedOutcomes(userId) {
+  const { data, error } = await supabase
+    .from("application_outcomes")
+    .select("id, outcome, response_days, created_at, jobs(id, title, company, location, category)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return (data || [])
+    .filter((row) => row.jobs) // guard against a job that was later deleted
+    .map((row) => ({
+      outcomeId: row.id,
+      outcome: row.outcome,
+      responseDays: row.response_days,
+      loggedAt: row.created_at,
+      job: row.jobs,
+    }));
+}
+
 // Lets a user log a real outcome, which feeds the crowdsourced
 // Employer Responsiveness Score for everyone -- the Learning Loop
 // mechanism from the spec, now backed by a real table.

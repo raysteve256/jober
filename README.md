@@ -132,6 +132,34 @@ one exception is the `/reason` call itself, which is deliberately
 clear "you're offline" state. Icons in `public/pwa-*.png` are
 placeholders; swap them for real branding before shipping.
 
+## Interface: three views, not just one long chat
+
+The app grew past what a single chat thread could reasonably hold --
+Job DNA, saved-worthy state, drafts, logged outcomes, a real jobs
+table -- so it's now three views behind a bottom tab bar:
+
+- **Search** -- the original conversational Reasoning Core flow,
+  unchanged.
+- **Browse** -- filters the `jobs` table directly (category, location)
+  by calling `searchJobs()` with no Reasoning Core involved. No Gemini
+  call, so it also doesn't touch the (very tight) daily quota -- a
+  real user can look through what's known without spending any of the
+  20-requests/day budget.
+- **Tracked** -- every job the user has logged an outcome for
+  (`getTrackedOutcomes()`, a real query joined against `jobs`), shown
+  with its outcome badge. This data already existed in
+  `application_outcomes` but had no UI home until now.
+
+Also fixed: a search returning zero jobs used to render nothing --
+confusing dead air. Now shows an honest "nothing matches yet" message
+with a nudge toward "+ Add a listing you found."
+
+Also fixed: the PWA manifest/icons were still the original blue "J"
+placeholder from before the field-journal redesign. Now match the
+ink/brass identity (`theme_color: #1F2430`, brass "F" icon) --
+verified in the actual built `manifest.webmanifest`, not just the
+source config.
+
 ## Application Layer (AI drafts, human sends -- no auto-apply)
 
 Per the spec, this is deliberately NOT an auto-submit tool -- employers
