@@ -132,6 +132,14 @@ one exception is the `/reason` call itself, which is deliberately
 clear "you're offline" state. Icons in `public/pwa-*.png` are
 placeholders; swap them for real branding before shipping.
 
+## Welcome screen
+
+Shows once, on first launch -- explains the trust marks, the
+ask-once-remember-forever behavior, and the no-auto-apply principle
+before anyone hits the chat box cold. Persisted via a `onboarded: true`
+flag in Job DNA, so returning users go straight to Search. "Begin"
+writes that flag and drops into the normal app shell.
+
 ## Interface: three views, not just one long chat
 
 The app grew past what a single chat thread could reasonably hold --

@@ -831,6 +831,83 @@ function BottomNav({ view, setView }) {
   );
 }
 
+function ValueProp({ icon, children }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <div className="mt-0.5 shrink-0" style={{ color: "var(--brass)" }}>{icon}</div>
+      <p className="text-sm leading-snug" style={{ color: "var(--ink)" }}>{children}</p>
+    </div>
+  );
+}
+
+function WelcomeScreen({ onBegin }) {
+  return (
+    <div className="mx-auto flex h-dvh max-w-md flex-col paper-grain">
+      <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+        <CompassRose className="h-16 w-16" />
+
+        <h1 className="font-display mt-4 text-3xl" style={{ color: "var(--ink)" }}>
+          Field Notes
+        </h1>
+        <p className="mt-1.5 text-sm italic" style={{ color: "var(--ink-soft)" }}>
+          your job discovery log
+        </p>
+
+        <p className="mt-6 text-sm leading-relaxed" style={{ color: "var(--ink)" }}>
+          Most job platforms race to show you more listings. This one asks what you actually
+          need, then tells you honestly which ones are worth your time.
+        </p>
+
+        <div className="mt-7 w-full space-y-4 text-left">
+          <ValueProp
+            icon={
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M3 5.5 L9 2 L15 5.5 V12.5 L9 16 L3 12.5 Z" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M6.5 9 L8.3 11 L12 6.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+          >
+            Every listing carries a real trust mark — verified, likely active, or flagged as
+            ghost risk — not just a match score.
+          </ValueProp>
+          <ValueProp
+            icon={
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M9 5 v4.5 l3 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            }
+          >
+            Asks one honest question when it needs to, remembers the answer, and never asks
+            again.
+          </ValueProp>
+          <ValueProp
+            icon={
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                <path d="M2 9 L11 9 M7 5 L11 9 L7 13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M13 5.5 v7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            }
+          >
+            Drafts an application when asked — you read it, edit it, send it yourself. Nothing
+            is ever submitted for you.
+          </ValueProp>
+        </div>
+      </div>
+
+      <div className="px-8 pb-8">
+        <button
+          onClick={onBegin}
+          className="w-full rounded-full border-2 py-2.5 text-sm font-medium"
+          style={{ borderColor: "var(--ink)", color: "var(--ink)", background: "var(--paper-deep)" }}
+        >
+          Begin
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [chat, setChat] = useState([]);
   const [input, setInput] = useState("");
@@ -840,7 +917,10 @@ export default function App() {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    getJobDNA().then(setJobDNA);
+    getJobDNA().then((dna) => {
+      setJobDNA(dna);
+      setShowWelcome(!dna.onboarded);
+    });
     getHistory().then((rows) => {
       setChat(rows.map((r) => ({ role: r.role, text: r.content })));
     });
@@ -853,6 +933,7 @@ export default function App() {
   const [retryTarget, setRetryTarget] = useState(null); // { message, retriable }
   const [showSubmitForm, setShowSubmitForm] = useState(false);
   const [view, setView] = useState("search"); // search | browse | tracked
+  const [showWelcome, setShowWelcome] = useState(false);
 
   async function sendMessage(message, { appendUserBubble = true } = {}) {
     if (!message || loading) return;
@@ -917,6 +998,15 @@ export default function App() {
 
   function retry() {
     if (retryTarget) sendMessage(retryTarget.message, { appendUserBubble: false });
+  }
+
+  function begin() {
+    setShowWelcome(false);
+    mergeJobDNA({ onboarded: true }).then(setJobDNA);
+  }
+
+  if (showWelcome) {
+    return <WelcomeScreen onBegin={begin} />;
   }
 
   return (
