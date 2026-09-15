@@ -195,6 +195,78 @@ Tap "Draft an application note" on any result card:
 4. The draft is editable, and there's a **Copy** button -- nothing is
    ever sent anywhere by the app itself.
 
+### Grounded in the job's real requirements, and sent the right way -- still never auto-submitted
+
+A person asked for the AI to read the job's actual requirements from
+its own page, ask them anything genuinely missing, and either send the
+finished application or hand it back to send themselves. Built the
+useful parts of this; deliberately did not build outright auto-submit.
+
+**Why not full auto-submit**: two separate real problems, not just a
+preference. (1) Employers are actively adding friction specifically to
+filter out AI-generated, automatically-submitted applications --
+building an auto-submit bot would make this app worse at its actual
+job, not better. (2) A technical wall: confirmed by researching real
+BrighterMonday listings that most real applications go through
+"Easy apply" (an in-platform, account-based, file-upload flow) or an
+external site's own multi-step form -- neither is something a backend
+function can reliably fill out and submit. Reading a page is a very
+different problem from filling out and submitting one.
+
+**What got built instead**:
+
+- `netlify/functions/_shared/jobDetails.mjs` fetches the job's own
+  detail page (not just the listing card already in `jobs`) and
+  extracts its real requirements text plus how to actually apply.
+  Built from three patterns confirmed by fetching live BrighterMonday
+  pages directly: "Easy apply" (the dominant, in-platform pattern --
+  confirmed on every listing on a fetched category page), an explicit
+  email address (confirmed real on an aggregated NGO listing --
+  `"Application Procedure ... by email to ugandaprocurement@heks-eper.org"`),
+  and an external site's own form (confirmed on another aggregated
+  listing). Only the email case is safe to build a shortcut for.
+- `draft-application.mjs` now also decides **ask vs. draft**, the same
+  philosophy as the Reasoning Core applied to application drafting: if
+  the job's real requirements mention something load-bearing the
+  bio/Job DNA doesn't address (a specific certification, years of
+  experience), it asks one direct question before drafting rather than
+  guessing either way. Verified both paths with mocked responses --
+  confirmed it asks when a real gap exists (a driving permit
+  requirement vs. no mention of one) and drafts directly when nothing
+  is missing.
+- **Sending is method-aware, still always human-confirmed**: if the
+  job's real page names an email address (validated with a
+  deterministic format check in `parseHelpers.js` before ever
+  offering it -- confirmed it rejects non-email text like "Apply via
+  the website" rather than generating a broken link), the person gets
+  an **"Open in email app"** button -- a `mailto:` link that opens
+  *their own* email client with the drafted note pre-filled. They
+  still click send themselves, in their own app -- this isn't the
+  app sending on their behalf, it's removing copy-paste friction while
+  keeping a human as the one who actually sends it. Otherwise (Easy
+  apply / external form), they get a **"Go to application page"**
+  link instead, since that's the honest, actually-reliable action.
+- **Honest about stale links**: if the job's own detail page redirects
+  elsewhere (an expired listing pattern confirmed by fetching a real
+  expired BrighterMonday listing during development, which redirected
+  to its category page instead of 404ing), the draft still gets
+  produced from what's already known, but with a visible note that the
+  link's freshness couldn't be confirmed -- rather than silently
+  treating a redirected generic page as if it were the real listing.
+- All of this is **non-blocking**: if the detail-page fetch fails, is
+  slow, or the job has no `source_url` at all (some user submissions
+  don't), drafting proceeds anyway using just what's already known,
+  same as before this feature existed.
+
+**Verified before shipping**: tested `fetchApplicationInfo()` against
+all four real scenarios (the real email case, the real Easy-Apply
+case, a redirected/stale case, and no-URL-at-all) with realistic
+mocked responses. Tested both `draft-application.mjs` decision paths
+(ask when a real gap exists, draft when nothing's missing). Verified
+the new `_shared/jobDetails.mjs` module and the extended
+`draft-application.mjs` both bundle correctly with the real Netlify
+CLI, physically inlined with no dangling imports.
+
 **Verified the shared-helper bundling actually works in production**,
 not just in theory: built the functions locally with the real Netlify
 CLI (`netlify functions:build`) and confirmed the retry/backoff code

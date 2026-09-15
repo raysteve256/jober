@@ -141,3 +141,13 @@ export function normalizeCategory(rawLabel, title = "") {
   }
   return "other";
 }
+
+// A basic, deliberately conservative email format check -- used to
+// decide whether to offer a mailto: link at all. If Gemini's
+// extraction hands back something that doesn't look like a real email
+// (a stray fragment, a mangled string), this catches it rather than
+// generating a broken mailto: link and presenting it as if it works.
+export function isPlausibleEmail(text) {
+  if (!text) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text.trim());
+}

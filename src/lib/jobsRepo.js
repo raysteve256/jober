@@ -64,6 +64,7 @@ export async function searchJobs(resolvedQuery = {}) {
       category: j.category,
       salaryUGXPerMonth: j.salary_amount,
       requiresCertifiedTranscript: j.requires_certified_transcript,
+      sourceUrl: j.source_url,
       meetsSalaryFloor: salary_min ? j.salary_amount >= salary_min : null,
       fit: score,
       fitPositives: positives,

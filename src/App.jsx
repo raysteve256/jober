@@ -3,7 +3,7 @@ import { getJobDNA, mergeJobDNA, logMessage, getHistory } from "./lib/jobDNA";
 import { searchJobs, logApplicationOutcome, submitJob, getTrackedOutcomes } from "./lib/jobsRepo";
 import { getCurrentUserId } from "./lib/supabaseClient";
 import { checkAtsSafety } from "./lib/atsCheck";
-import { CATEGORIES } from "./lib/parseHelpers";
+import { CATEGORIES, isPlausibleEmail } from "./lib/parseHelpers";
 
 // --- Small icon components, all grounded in the field-journal / -----
 // --- expedition metaphor: a compass for orientation, a wax-seal ------
@@ -189,8 +189,12 @@ function OutcomeLogger({ job }) {
 }
 
 function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
-  const [stage, setStage] = useState("idle"); // idle | need-bio | drafting | drafted | error
+  // idle | need-bio | fetching-info | need-clarification | drafting | drafted | error
+  const [stage, setStage] = useState("idle");
   const [bioInput, setBioInput] = useState("");
+  const [clarifyInput, setClarifyInput] = useState("");
+  const [clarifyingQuestion, setClarifyingQuestion] = useState(null);
+  const [applicationInfo, setApplicationInfo] = useState(null); // { full_requirements, application_method, application_email, possibly_stale_link }
   const [draft, setDraft] = useState("");
   const [modelCheck, setModelCheck] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -198,7 +202,27 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
 
   const atsResult = draft ? checkAtsSafety(draft) : null;
 
-  async function runDraft(bio) {
+  async function fetchInfoThenDraft(bio) {
+    setStage("fetching-info");
+    setError(null);
+    let info = applicationInfo;
+    if (!info) {
+      try {
+        const res = await fetch("/.netlify/functions/job-application-info", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceUrl: job.sourceUrl }),
+        });
+        info = await res.json().catch(() => null);
+      } catch {
+        info = null; // non-blocking -- proceed without extra detail
+      }
+      setApplicationInfo(info || { full_requirements: null, application_method: "platform_or_external", application_email: null });
+    }
+    runDraft(bio, info?.full_requirements, null);
+  }
+
+  async function runDraft(bio, fullRequirements, extraContext) {
     setStage("drafting");
     setError(null);
     try {
@@ -214,10 +238,18 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
           },
           jobDNA,
           bio,
+          fullRequirements,
+          extraContext,
         }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+
+      if (body.action === "ask") {
+        setClarifyingQuestion(body.clarifying_question);
+        setStage("need-clarification");
+        return;
+      }
 
       setDraft(body.draft || "");
       setModelCheck(body.selfCheck || null);
@@ -230,7 +262,7 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
 
   function start() {
     if (jobDNA.bio) {
-      runDraft(jobDNA.bio);
+      fetchInfoThenDraft(jobDNA.bio);
     } else {
       setStage("need-bio");
     }
@@ -240,7 +272,13 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
     const bio = bioInput.trim();
     if (!bio) return;
     await onBioSaved(bio);
-    runDraft(bio);
+    fetchInfoThenDraft(bio);
+  }
+
+  function answerClarification() {
+    const answer = clarifyInput.trim();
+    if (!answer) return;
+    runDraft(jobDNA.bio, applicationInfo?.full_requirements, answer);
   }
 
   function copyDraft() {
@@ -248,6 +286,8 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+
+  const canEmail = applicationInfo?.application_method === "email" && isPlausibleEmail(applicationInfo.application_email);
 
   if (stage === "idle") {
     return (
@@ -280,7 +320,37 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
           className="rounded-full border px-2.5 py-1 text-xs font-medium"
           style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
         >
-          Save and draft
+          Save and continue
+        </button>
+      </div>
+    );
+  }
+
+  if (stage === "fetching-info") {
+    return (
+      <p className="mt-2 text-xs italic" style={{ color: "var(--ink-soft)" }}>
+        Checking the actual listing for what it asks for…
+      </p>
+    );
+  }
+
+  if (stage === "need-clarification") {
+    return (
+      <div className="mt-2 space-y-1.5 border-t pt-2" style={{ borderColor: "var(--brass-line)" }}>
+        <p className="text-xs" style={{ color: "var(--ink)" }}>{clarifyingQuestion}</p>
+        <textarea
+          className="w-full rounded-sm border px-2 py-1.5 text-xs"
+          style={{ borderColor: "var(--brass-line)", background: "#fbf8ef", color: "var(--ink)" }}
+          rows={2}
+          value={clarifyInput}
+          onChange={(e) => setClarifyInput(e.target.value)}
+        />
+        <button
+          onClick={answerClarification}
+          className="rounded-full border px-2.5 py-1 text-xs font-medium"
+          style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
+        >
+          Continue
         </button>
       </div>
     );
@@ -308,6 +378,13 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
   // drafted
   return (
     <div className="mt-2 space-y-2 border-t pt-2" style={{ borderColor: "var(--brass-line)" }}>
+      {applicationInfo?.possibly_stale_link && (
+        <p className="text-[11px] italic" style={{ color: "var(--stamp-ghost)" }}>
+          Couldn't confirm this is still the live listing (the link redirected elsewhere) -- this draft is based on
+          what's already known, worth double-checking the listing is still open.
+        </p>
+      )}
+
       <textarea
         className="w-full rounded-sm border px-2 py-1.5 text-xs"
         style={{ borderColor: "var(--brass-line)", background: "#fbf8ef", color: "var(--ink)" }}
@@ -346,16 +423,40 @@ function ApplicationDrafter({ job, jobDNA, onBioSaved }) {
       )}
 
       <p className="text-[11px] italic" style={{ color: "var(--ink-soft)" }}>
-        Read this before sending -- edit anything that doesn't sound like you. Nothing is sent automatically.
+        Read this before sending -- edit anything that doesn't sound like you. Nothing is ever sent automatically.
       </p>
 
-      <button
-        onClick={copyDraft}
-        className="rounded-full border px-2.5 py-1 text-xs font-medium"
-        style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={copyDraft}
+          className="rounded-full border px-2.5 py-1 text-xs font-medium"
+          style={{ borderColor: "var(--ink)", color: "var(--ink)" }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+
+        {canEmail ? (
+          <a
+            href={`mailto:${applicationInfo.application_email}?subject=${encodeURIComponent(
+              `Application: ${job.title}`
+            )}&body=${encodeURIComponent(draft)}`}
+            className="rounded-full border px-2.5 py-1 text-xs font-medium"
+            style={{ borderColor: "var(--seal-verified)", color: "var(--seal-verified)" }}
+          >
+            Open in email app
+          </a>
+        ) : job.sourceUrl ? (
+          <a
+            href={job.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full border px-2.5 py-1 text-xs font-medium"
+            style={{ borderColor: "var(--brass)", color: "var(--brass)" }}
+          >
+            Go to application page
+          </a>
+        ) : null}
+      </div>
     </div>
   );
 }
